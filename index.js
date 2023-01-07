@@ -116,6 +116,12 @@ async function run() {
 
     app.post("/orders", verifyJWT, async (req, res) => {
       const order = req.body;
+      const { service, email, address, customer, phone, postCode } = order;
+
+      if (!service || !email || !address || !customer || !phone || !postCode) {
+        return res.send({ error: "Please provide all information!!" });
+      }
+
       const orderService = await serviceCollection.findOne({
         _id: ObjectId(order.service),
       });
@@ -127,9 +133,9 @@ async function run() {
         total_amount: orderService.price,
         currency: order.currency,
         tran_id: transactionId, // use unique tran_id for each api call
-        success_url: `http://localhost:5000/payment/success?transactionId=${transactionId}`,
-        fail_url: "http://localhost:5000/payment/fail",
-        cancel_url: "http://localhost:5000/payment/cancel",
+        success_url: `${process.env.SERVER_URL}/payment/success?transactionId=${transactionId}`,
+        fail_url: `${process.env.SERVER_URL}/payment/fail?transactionId=${transactionId}`,
+        cancel_url: `${process.env.SERVER_URL}/payment/cancel`,
         ipn_url: "http://localhost:3030/ipn",
         shipping_method: "Courier",
         product_name: "Computer.",
@@ -172,6 +178,10 @@ async function run() {
     app.post("/payment/success", async (req, res) => {
       const { transactionId } = req.query;
 
+      if (!transactionId) {
+        return res.redirect(`${process.env.CLIENT_URL}/payment/fail`);
+      }
+
       const result = await orderCollection.updateOne(
         { transactionId },
         {
@@ -183,8 +193,30 @@ async function run() {
       );
       if (result.modifiedCount > 0) {
         res.redirect(
-          `http://localhost:3000/payment/success?transactionId=${transactionId}`
+          `${process.env.CLIENT_URL}/payment/success?transactionId=${transactionId}`
         );
+      }
+    });
+
+    // get order by payment
+    app.get("/orders/by-transactionId/:id", async (req, res) => {
+      const { id } = req.params;
+      const order = await orderCollection.findOne({ transactionId: id });
+      res.send(order);
+    });
+
+    // fail payment
+
+    app.post("/payment/fail", async (req, res) => {
+      const { transactionId } = req.query;
+      if (!transactionId) {
+        return res.redirect(`${process.env.CLIENT_URL}/payment/fail`);
+      }
+
+      const result = await orderCollection.deleteOne({ transactionId });
+
+      if (result.deletedCount) {
+        res.redirect(`${process.env.CLIENT_URL}/payment/fail`);
       }
     });
 
